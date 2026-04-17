@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Segment Predictor | MLOps</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0d14;
+      --surface: #111827;
+      --surface2: #1a2234;
+      --border: #1e2d45;
+      --text: #e8edf5;
+      --muted: #8896b0;
+      --accent: #4f8ef7;
+      --accent-glow: rgba(79,142,247,0.18);
+      --champions: #22c55e;
+      --loyal: #3b82f6;
+      --atrisk: #f59e0b;
+      --lost: #ef4444;
+      --new: #a855f7;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 60px;
+      background-image:
+        radial-gradient(ellipse at 20% 10%, rgba(79,142,247,0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(168,85,247,0.06) 0%, transparent 50%);
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      max-width: 640px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-glow);
+      border: 1px solid rgba(79,142,247,0.3);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 999px;
+      margin-bottom: 18px;
+    }
+    header h1 {
+      font-size: clamp(24px, 5vw, 38px);
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #e8edf5 30%, #4f8ef7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      width: 100%;
+      max-width: 680px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
+
+    /* ── Form Grid ── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .field .hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 5px;
+      opacity: 0.7;
+    }
+
+    input[type="number"],
+    select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      appearance: none;
+    }
+    input[type="number"]:focus,
+    select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79,142,247,0.15);
+    }
+    input[type="number"]::placeholder { color: var(--muted); opacity: 0.6; }
+
+    .select-wrap {
+      position: relative;
+    }
+    .select-wrap::after {
+      content: '▾';
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+      font-size: 13px;
+    }
+    select option { background: #1a2234; }
+
+    /* ── Divider ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      grid-column: 1 / -1;
+      margin-top: 4px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Predict Button ── */
+    .btn-predict {
+      margin-top: 28px;
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #3b7ef0, #6048ee);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 6px 30px rgba(59,126,240,0.35);
+    }
+    .btn-predict:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(59,126,240,0.45); }
+    .btn-predict:active { transform: translateY(0); }
+    .btn-predict .spinner {
+      display: none;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      position: absolute;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .btn-predict.loading .spinner { display: block; }
+    @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+    /* ── Result ── */
+    #result {
+      margin-top: 28px;
+      display: none;
+      animation: fadeUp 0.4s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-card {
+      border-radius: 14px;
+      padding: 24px 28px;
+      border: 1px solid;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .result-icon {
+      font-size: 44px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .result-info { flex: 1; }
+    .result-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.6;
+      margin-bottom: 4px;
+    }
+    .result-segment {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+    .result-description {
+      font-size: 13px;
+      line-height: 1.6;
+      opacity: 0.75;
+    }
+    .result-confidence {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .conf-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .conf-bar {
+      flex: 1;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .conf-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 1s ease;
+    }
+    .conf-pct { font-size: 13px; font-weight: 700; }
+
+    /* Segment Colors */
+    .seg-champions  { background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.3);  color: #22c55e; }
+    .seg-loyal      { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); color: #3b82f6; }
+    .seg-atrisk     { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); color: #f59e0b; }
+    .seg-lost       { background: rgba(239,68,68,0.08);  border-color: rgba(239,68,68,0.3);  color: #ef4444; }
+    .seg-new        { background: rgba(168,85,247,0.08); border-color: rgba(168,85,247,0.3); color: #a855f7; }
+
+    /* ── Probabilities Bar Chart ── */
+    #prob-section {
+      margin-top: 20px;
+      display: none;
+    }
+    #prob-section h3 {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .prob-name {
+      font-size: 13px;
+      font-weight: 600;
+      width: 160px;
+      flex-shrink: 0;
+    }
+    .prob-bar-wrap {
+      flex: 1;
+      background: var(--surface2);
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 1s ease;
+    }
+    .prob-pct {
+      font-size: 12px;
+      font-weight: 700;
+      width: 40px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ── Error / Info ── */
+    .error-box {
+      border-radius: 10px;
+      padding: 14px 18px;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #ef4444;
+      font-size: 13px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .info-strip {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: rgba(79,142,247,0.06);
+      border: 1px solid rgba(79,142,247,0.15);
+      border-radius: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .info-strip strong { color: var(--accent); }
+
+    /* footer */
+    footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="badge">🤖 Random Forest Classifier</div>
+  <h1>Customer Segment Predictor</h1>
+  <p>Enter a customer's shopping behaviour to predict which of the four business segments they belong to.</p>
+</header>
+
+<div class="card">
+  <form id="predict-form">
+    <div class="form-grid">
+
+      <!-- Section: Purchase Behaviour -->
+      <div class="section-label">Purchase Behaviour</div>
+
+      <div class="field">
+        <label for="avg-basket-value">Avg Basket Value (£)</label>
+        <input type="number" id="avg-basket-value" placeholder="e.g. 245.50" step="0.01" min="0" required />
+        <div class="hint">Average total spend per shopping trip</div>
+      </div>
+
+      <div class="field">
+        <label for="avg-basket-size">Avg Basket Size</label>
+        <input type="number" id="avg-basket-size" placeholder="e.g. 18" step="0.1" min="0" required />
+        <div class="hint">Average number of items per order</div>
+      </div>
+
+      <div class="field full">
+        <label for="volatility">Spending Volatility (σ)</label>
+        <input type="number" id="volatility" placeholder="e.g. 120.00" step="0.01" min="0" required />
+        <div class="hint">Std deviation of basket values — set 0 if only one purchase</div>
+      </div>
+
+      <!-- Section: Shopping Profile -->
+      <div class="section-label">Shopping Profile</div>
+
+      <div class="field">
+        <label for="fav-day">Favourite Shopping Day</label>
+        <div class="select-wrap">
+          <select id="fav-day" required>
+            <option value="" disabled selected>Select day…</option>
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+            <option>Saturday</option>
+            <option>Sunday</option>
+          </select>
+        </div>
+        <div class="hint">Day with the most purchases</div>
+      </div>
+
+      <div class="field">
+        <label for="country">Country</label>
+        <div class="select-wrap">
+          <select id="country" required>
+            <option value="" disabled selected>Select country…</option>
+            <option>Australia</option>
+            <option>Austria</option>
+            <option>Bahrain</option>
+            <option>Belgium</option>
+            <option>Bermuda</option>
+            <option>Brazil</option>
+            <option>Canada</option>
+            <option>Channel Islands</option>
+            <option>Cyprus</option>
+            <option>Czech Republic</option>
+            <option>Denmark</option>
+            <option>EIRE</option>
+            <option>European Community</option>
+            <option>Finland</option>
+            <option>France</option>
+            <option>Germany</option>
+            <option>Greece</option>
+            <option>Hong Kong</option>
+            <option>Iceland</option>
+            <option>Israel</option>
+            <option>Italy</option>
+            <option>Japan</option>
+            <option>Lebanon</option>
+            <option>Lithuania</option>
+            <option>Malta</option>
+            <option>Netherlands</option>
+            <option>Nigeria</option>
+            <option>Norway</option>
+            <option>Poland</option>
+            <option>Portugal</option>
+            <option>RSA</option>
+            <option>Saudi Arabia</option>
+            <option>Singapore</option>
+            <option>Spain</option>
+            <option>Sweden</option>
+            <option>Switzerland</option>
+            <option>Thailand</option>
+            <option>United Arab Emirates</option>
+            <option>United Kingdom</option>
+            <option>USA</option>
+            <option>Unspecified</option>
+            <option>West Indies</option>
+          </select>
+        </div>
+        <div class="hint">Customer's country of purchase</div>
+      </div>
+
+    </div><!-- /form-grid -->
+
+    <button type="submit" class="btn-predict" id="btn">
+      <span id="btn-text">Predict Segment</span>
+      <div class="spinner"></div>
+    </button>
+  </form>
+
+  <!-- Result -->
+  <div id="result"></div>
+
+  <!-- Probability Bars -->
+  <div id="prob-section">
+    <h3>Segment Probabilities</h3>
+    <div id="prob-bars"></div>
+  </div>
+
+  <div class="info-strip">
+    <strong>API endpoint:</strong> This form sends a <code>POST</code> request to
+    <strong>http://localhost:5000/predict</strong>. Start your Flask/FastAPI backend before predicting.
+    In demo mode (no backend), a <em>mock result</em> is shown.
+  </div>
+</div>
+
+<footer>Customer Segmentation MLOps Project &nbsp;·&nbsp; Random Forest Classifier</footer>
+
+<script>
+  // ── Segment metadata ────────────────────────────────────────────
+  const SEGMENTS = {
+    "Champions": {
+      icon: "🏆", cls: "seg-champions",
+      desc: "High-value, frequent, and recent buyers. These are your best customers — reward and retain them.",
+      color: "#22c55e"
+    },
+    "Loyal Customers": {
+      icon: "💙", cls: "seg-loyal",
+      desc: "Regular shoppers with consistent spending. They respond well to loyalty programmes and upselling.",
+      color: "#3b82f6"
+    },
+    "At Risk": {
+      icon: "⚠️", cls: "seg-atrisk",
+      desc: "Previously active customers who haven't purchased recently. Win them back with targeted campaigns.",
+      color: "#f59e0b"
+    },
+    "New Customers": {
+      icon: "✨", cls: "seg-new",
+      desc: "First-time or very recent buyers. Nurture with onboarding offers to convert them into loyal customers.",
+      color: "#a855f7"
+    },
+    "Lost / Inactive": {
+      icon: "😴", cls: "seg-lost",
+      desc: "Long-dormant customers with low spend. Re-engagement campaigns or win-back discounts may help.",
+      color: "#ef4444"
+    }
+  };
+
+  // ── Mock prediction (used when backend is unreachable) ──────────
+  function mockPredict(data) {
+    const v = data.AvgBasketValue;
+    const probs = {};
+    const labels = Object.keys(SEGMENTS);
+    let sum = 0;
+    labels.forEach((l, i) => {
+      const raw = Math.random() * 0.3 + (i === 0 && v > 200 ? 0.6 : 0.05);
+      probs[l] = raw;
+      sum += raw;
+    });
+    // Normalise
+    labels.forEach(l => probs[l] = +(probs[l] / sum).toFixed(4));
+    const winner = labels.reduce((a, b) => probs[a] > probs[b] ? a : b);
+    return { segment: winner, probabilities: probs, mock: true };
+  }
+
+  // ── Render Result ───────────────────────────────────────────────
+  function renderResult(res) {
+    const seg = res.segment;
+    const meta = SEGMENTS[seg] || { icon:"🔎", cls:"seg-loyal", desc:"Unknown segment.", color:"#4f8ef7" };
+    const prob = res.probabilities ? res.probabilities[seg] : null;
+    const confPct = prob ? Math.round(prob * 100) : null;
+
+    const resultDiv = document.getElementById("result");
+    resultDiv.style.display = "block";
+
+    resultDiv.innerHTML = `
+      ${res.mock ? `<div class="error-box" style="margin-bottom:14px;">
+        ⚡ <span><strong>Demo Mode:</strong> Backend not reachable at localhost:5000 — showing mock prediction.</span>
+      </div>` : ""}
+      <div class="result-card ${meta.cls}">
+        <div class="result-icon">${meta.icon}</div>
+        <div class="result-info">
+          <div class="result-label">Predicted Segment</div>
+          <div class="result-segment">${seg}</div>
+          <div class="result-description">${meta.desc}</div>
+          ${confPct !== null ? `
+          <div class="result-confidence">
+            <span class="conf-label">Confidence</span>
+            <div class="conf-bar">
+              <div class="conf-fill" id="conf-fill" style="width:0%;background:${meta.color}"></div>
+            </div>
+            <span class="conf-pct">${confPct}%</span>
+          </div>` : ""}
+        </div>
+      </div>
+    `;
+
+    // Animate confidence bar
+    if (confPct !== null) {
+      setTimeout(() => {
+        const el = document.getElementById("conf-fill");
+        if (el) el.style.width = confPct + "%";
+      }, 50);
+    }
+
+    // Probability section
+    if (res.probabilities) {
+      const section = document.getElementById("prob-section");
+      const barsDiv = document.getElementById("prob-bars");
+      section.style.display = "block";
+      barsDiv.innerHTML = "";
+
+      const sorted = Object.entries(res.probabilities).sort((a,b) => b[1] - a[1]);
+      sorted.forEach(([label, p]) => {
+        const m = SEGMENTS[label];
+        const pct = Math.round(p * 100);
+        const bar = document.createElement("div");
+        bar.className = "prob-row";
+        bar.innerHTML = `
+          <div class="prob-name" style="color:${m ? m.color : '#8896b0'}">${label}</div>
+          <div class="prob-bar-wrap">
+            <div class="prob-bar-fill" data-pct="${pct}" style="width:0%;background:${m ? m.color : '#4f8ef7'}"></div>
+          </div>
+          <div class="prob-pct">${pct}%</div>
+        `;
+        barsDiv.appendChild(bar);
+      });
+
+      // Animate bars
+      setTimeout(() => {
+        document.querySelectorAll(".prob-bar-fill").forEach(el => {
+          el.style.width = el.dataset.pct + "%";
+        });
+      }, 50);
+    }
+  }
+
+  // ── Error display ───────────────────────────────────────────────
+  function renderError(msg) {
+    const resultDiv = document.getElementById("result");
+    resultDiv.style.display = "block";
+    resultDiv.innerHTML = `<div class="error-box">⚠️ <span>${msg}</span></div>`;
+  }
+
+  // ── Form Submit ─────────────────────────────────────────────────
+  document.getElementById("predict-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const btn = document.getElementById("btn");
+    const btnText = document.getElementById("btn-text");
+    document.getElementById("result").style.display = "none";
+    document.getElementById("prob-section").style.display = "none";
+
+    // Loading state
+    btn.classList.add("loading");
+    btnText.textContent = "Predicting…";
+    btn.disabled = true;
+
+    const payload = {
+      AvgBasketValue:  parseFloat(document.getElementById("avg-basket-value").value),
+      AvgBasketSize:   parseFloat(document.getElementById("avg-basket-size").value),
+      Volatility:      parseFloat(document.getElementById("volatility").value),
+      FavoriteDay:     document.getElementById("fav-day").value,
+      Country:         document.getElementById("country").value
+    };
+
+    try {
+      const response = await fetch("http://localhost:5000/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      renderResult(data);
+
+    } catch (err) {
+      // Fall back to mock
+      const mockResult = mockPredict(payload);
+      renderResult(mockResult);
+    } finally {
+      btn.classList.remove("loading");
+      btnText.textContent = "Predict Segment";
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

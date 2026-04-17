@@ -1,0 +1,12 @@
+S.No,Category,Technology,Version/Details,Purpose in Project
+1,Programming Language,Python,Python 3,Core language used for entire pipeline
+2,Machine Learning,scikit-learn,-,KMeans clustering and RandomForest classification
+3,Machine Learning,StandardScaler (scikit-learn),-,Feature scaling for distance-based algorithms
+4,MLOps,MLflow,-,"Experiment tracking, parameter logging, metric logging, artifact storage, model versioning"
+5,Data Processing,pandas,-,"Data loading, cleaning, transformation, RFM computation"
+6,Data Processing,NumPy,-,Numerical operations and array handling
+7,Visualization,Matplotlib,-,"Plotting charts — bar, line, pie, heatmaps"
+8,Visualization,Seaborn,-,Statistical visualizations with enhanced styling
+9,Database,SQLite (mlflow.db),-,MLflow backend store for tracking metadata
+10,Dataset,UCI Online Retail Dataset,541909 transactions,Source e-commerce dataset in CSV format
+11,Pipeline,run_pipeline.py,Custom Script,Orchestrates all 6 pipeline steps in one command
