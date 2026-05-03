@@ -26,19 +26,20 @@ def create_output_dir(directory='data'):
 def rfm_analysis(df):
     """
     Performs Recency, Frequency, Monetary (RFM) analysis.
+    Returns the RFM DataFrame with log-transformed features ready for clustering.
     """
     print("Performing RFM Analysis...")
-    
+
     # Ensure InvoiceDate is datetime
     df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    
+
     # Calculate TotalPrice if not present
     if 'TotalPrice' not in df.columns:
         df['TotalPrice'] = df['Quantity'] * df['Price']
-    
+
     # Set reference date as one day after the last transaction
     current_date = df['InvoiceDate'].max() + pd.Timedelta(days=1)
-    
+
     # Group by Customer ID
     rfm = df.groupby('Customer ID').agg({
         'InvoiceDate': lambda x: (current_date - x.max()).days,
@@ -46,14 +47,49 @@ def rfm_analysis(df):
         'TotalPrice': 'sum'
     }).rename(columns={
         'InvoiceDate': 'Recency',
-        'Invoice': 'Frequency',
-        'TotalPrice': 'Monetary'
+        'Invoice':     'Frequency',
+        'TotalPrice':  'Monetary'
     }).reset_index()
-    
-    # Filter out negative or zero monetary/frequency values if any (data anomalies)
-    rfm = rfm[rfm['Monetary'] > 0]
-    
+
+    # Keep only real, positive purchases
+    rfm = rfm[(rfm['Monetary'] > 0) & (rfm['Frequency'] > 0) & (rfm['Recency'] >= 0)]
+
+    # ── Log-transform skewed features (standard RFM practice) ──
+    # Frequency and Monetary are heavily right-skewed; log1p compresses
+    # the long tail so all clusters get a fair share of feature space.
+    rfm['Frequency'] = np.log1p(rfm['Frequency'])
+    rfm['Monetary']  = np.log1p(rfm['Monetary'])
+
     return rfm
+
+def _safe_sample(X, labels, n=10000, random_state=42):
+    """
+    Stratified sample that guarantees at least 2 unique cluster labels,
+    so silhouette_score / davies_bouldin_score never crash.
+    """
+    unique_labels = np.unique(labels)
+    if len(unique_labels) < 2:
+        return X, labels   # can't do better; caller should guard
+
+    # Ensure at least 1 representative from every cluster
+    idx = []
+    for lbl in unique_labels:
+        lbl_idx = np.where(labels == lbl)[0]
+        idx.append(lbl_idx[0])   # 1 guaranteed sample per cluster
+
+    # Fill the rest randomly (without replacement where possible)
+    remaining = n - len(idx)
+    if remaining > 0:
+        pool = np.array([i for i in range(len(labels)) if i not in set(idx)])
+        if len(pool) > 0:
+            extra = np.random.default_rng(random_state).choice(
+                pool, size=min(remaining, len(pool)), replace=False
+            )
+            idx.extend(extra.tolist())
+
+    idx = np.array(idx)
+    return X[idx], labels[idx]
+
 
 def plot_elbow_curve(X_scaled, output_dir, max_k=10):
     """Graph 1: Elbow Curve - finding optimal K"""
@@ -61,19 +97,21 @@ def plot_elbow_curve(X_scaled, output_dir, max_k=10):
     inertias = []
     silhouettes = []
     K_range = range(2, max_k + 1)
-    
+
     for k in K_range:
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
         km.fit(X_scaled)
         inertias.append(km.inertia_)
-        
-        # Sample for silhouette if large dataset
+
         if len(X_scaled) > 10000:
-            from sklearn.utils import resample
-            X_sample, labels_sample = resample(X_scaled, km.labels_, n_samples=10000, random_state=42)
-            sil = silhouette_score(X_sample, labels_sample)
+            X_s, lbl_s = _safe_sample(X_scaled, km.labels_, n=10000)
         else:
-            sil = silhouette_score(X_scaled, km.labels_)
+            X_s, lbl_s = X_scaled, km.labels_
+
+        if len(np.unique(lbl_s)) >= 2:
+            sil = silhouette_score(X_s, lbl_s)
+        else:
+            sil = 0.0
         silhouettes.append(sil)
         print(f"   k={k}: Inertia={km.inertia_:.0f}, Silhouette={sil:.4f}")
     
@@ -247,19 +285,23 @@ if __name__ == "__main__":
                 cluster_labels = kmeans.labels_
                 rfm['Cluster'] = cluster_labels
                 
-                # === CALCULATE ALL METRICS ===
+                # === CALCULATE ALL METRICS (safe stratified sampling) ===
                 inertia = kmeans.inertia_
-                
+
                 if len(X_scaled) > 10000:
-                    from sklearn.utils import resample
-                    X_sample, labels_sample = resample(X_scaled, cluster_labels, n_samples=10000, random_state=42)
-                    silhouette = silhouette_score(X_sample, labels_sample)
-                    db_score = davies_bouldin_score(X_sample, labels_sample)
-                    ch_score = calinski_harabasz_score(X_sample, labels_sample)
+                    X_s, lbl_s = _safe_sample(X_scaled, cluster_labels, n=10000)
                 else:
-                    silhouette = silhouette_score(X_scaled, cluster_labels)
-                    db_score = davies_bouldin_score(X_scaled, cluster_labels)
-                    ch_score = calinski_harabasz_score(X_scaled, cluster_labels)
+                    X_s, lbl_s = X_scaled, cluster_labels
+
+                if len(np.unique(lbl_s)) >= 2:
+                    silhouette = silhouette_score(X_s, lbl_s)
+                    db_score   = davies_bouldin_score(X_s, lbl_s)
+                    ch_score   = calinski_harabasz_score(X_s, lbl_s)
+                else:
+                    print("   ⚠️ Only 1 unique cluster in sample — metrics set to defaults.")
+                    silhouette = 0.0
+                    db_score   = float('inf')
+                    ch_score   = 0.0
                 
                 print(f"\n📏 Clustering Metrics:")
                 print(f"   Inertia: {inertia:.2f}")

@@ -47,30 +47,15 @@ def load_and_clean_data(filepath):
     df_clean = df.dropna(subset=['Description']).copy()
     print(f"Shape after dropping missing Description: {df_clean.shape}")
 
-    # 2. Generate unique Customer IDs for missing values
-    # Find the maximum existing Customer ID or start high
-    # Check if Customer ID column exists first
+    # 2. Drop rows with missing Customer ID
+    # (RFM analysis requires a real customer identifier;
+    #  generating synthetic IDs creates fake customers that distort clustering)
     if 'Customer ID' in df_clean.columns:
-        # Convert to numeric, coercing errors to NaN just in case of weird strings, though usually float
-        df_clean['Customer ID'] = pd.to_numeric(df_clean['Customer ID'], errors='coerce')
-        
-        max_id = df_clean['Customer ID'].max()
-        if pd.isna(max_id):
-            start_id = 100000 
-        else:
-            start_id = int(max_id) + 1
-            
-        missing_mask = df_clean['Customer ID'].isna()
-        num_missing = missing_mask.sum()
-        
-        if num_missing > 0:
-            print(f"Generating {num_missing} unique Customer IDs starting from {start_id}...")
-            # Create a range for new IDs
-            new_ids = np.arange(start_id, start_id + num_missing)
-            df_clean.loc[missing_mask, 'Customer ID'] = new_ids
-            
-        # Ensure Customer ID is integer type for consistency
+        before = len(df_clean)
+        df_clean = df_clean.dropna(subset=['Customer ID'])
         df_clean['Customer ID'] = df_clean['Customer ID'].astype(int)
+        dropped = before - len(df_clean)
+        print(f"Dropped {dropped} rows with missing Customer ID.")
     else:
         print("Warning: 'Customer ID' column not found.")
     
