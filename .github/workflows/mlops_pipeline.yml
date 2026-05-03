@@ -8,7 +8,7 @@ on:
 env:
   # EC2 MLflow URI — used only in the deploy job (SSH access required).
   # The pipeline job uses a local file-based backend (no server needed).
-  EC2_MLFLOW_URI: http://54.206.46.48:5000
+  EC2_MLFLOW_URI: http://16.176.132.85:5000
   MLFLOW_EXPERIMENT: customer
   DOCKER_IMAGE: customer-segmentation-api
   CONTAINER_NAME: segmentation-api
