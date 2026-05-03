@@ -1,0 +1,199 @@
+name: MLOps Pipeline — CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}          # allow manual trigger
+
+env:
+  MLFLOW_TRACKING_URI: http://54.206.46.48:5000
+  MLFLOW_EXPERIMENT: customer
+  DOCKER_IMAGE: customer-segmentation-api
+  CONTAINER_NAME: segmentation-api
+  APP_PORT: 5001
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+# ─────────────────────────────────────────────────────────────────────────────
+
+  # ── Job 1: Unit / smoke tests (fast, no data required) ─────────────────
+  test:
+    name: "API Smoke Tests"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run API smoke tests
+        run: pytest tests/ -v --tb=short
+
+  # ── Job 2: Full ML Pipeline ─────────────────────────────────────────────
+  pipeline:
+    name: "Run ML Pipeline"
+    runs-on: ubuntu-latest
+    needs: test                  # only run pipeline if tests pass
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Restore dataset
+      #    Option A: base64-encoded archive stored as a GitHub secret
+      #    Option B: download from S3/GCS in a separate step
+      #    Option C: the data/ is committed (not recommended for large files)
+      - name: Restore data directory
+        env:
+          DATA_ARCHIVE_B64: ${{ secrets.DATA_ARCHIVE_B64 }}
+        run: |
+          if [ -n "$DATA_ARCHIVE_B64" ]; then
+            echo "$DATA_ARCHIVE_B64" | base64 -d > data.tar.gz
+            tar -xzf data.tar.gz
+            echo "Dataset restored from secret."
+          else
+            echo "No DATA_ARCHIVE_B64 secret found; assuming data/ already present."
+          fi
+
+      # 5. Run full 6-step ML pipeline → logs to remote MLflow
+      - name: Run ML Pipeline
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
+        run: python run_pipeline.py
+
+      # 6. Export KMeans + RF models from MLflow → models/*.pkl
+      - name: Export KMeans + RF models
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
+        run: python scripts/export_models.py
+
+      # 7. Export StandardScaler → models/scaler.pkl
+      - name: Export Scaler
+        run: python scripts/save_scaler.py
+
+      # 8. Upload models/ for use in the deploy job
+      - name: Upload trained models
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-models
+          path: models/
+          retention-days: 3
+
+      # 9. Upload data artifacts (plots, reports) for audit / debug
+      - name: Upload pipeline data outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-outputs
+          path: |
+            data/*.png
+            data/*.csv
+            data/*.txt
+          retention-days: 7
+
+  # ── Job 3: Build & Deploy to EC2 ───────────────────────────────────────
+  deploy:
+    name: "Build & Deploy to EC2"
+    runs-on: ubuntu-latest
+    needs: pipeline              # only deploy if pipeline succeeds
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      # 1. Checkout (fresh workspace on deploy runner)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Download exported models from pipeline job
+      - name: Download trained models
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-models
+          path: models/
+
+      # 3. Configure SSH agent with EC2 private key
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      # 4. Trust EC2 host (prevent interactive StrictHostKeyChecking prompt)
+      - name: Add EC2 to known_hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      # 5. Sync source code + models to EC2 (exclude large / dev files)
+      - name: Sync code to EC2
+        run: |
+          rsync -avz \
+            --exclude '.git' \
+            --exclude '.venv' \
+            --exclude '__pycache__' \
+            --exclude 'mlruns' \
+            --exclude 'mlartifacts' \
+            --exclude 'mlflow.db' \
+            --exclude 'data/online_retail.csv' \
+            --exclude 'data/processed_online_retail.csv' \
+            --exclude 'data/labeled_customers.csv' \
+            --exclude 'data/customer_segments.csv' \
+            -e "ssh" \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/app/
+
+      # 6. Build Docker image on EC2 and restart container
+      - name: Build Docker image & restart container on EC2
+        env:
+          EC2_HOST:   ${{ secrets.EC2_HOST }}
+          EC2_USER:   ${{ secrets.EC2_USER }}
+          MLFLOW_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          APP_PORT:   ${{ env.APP_PORT }}
+          IMAGE:      ${{ env.DOCKER_IMAGE }}
+          CONTAINER:  ${{ env.CONTAINER_NAME }}
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash << ENDSSH
+            set -e
+            cd /home/\$USER/app
+
+            echo "==> Building Docker image: ${IMAGE}:latest"
+            docker build -t ${IMAGE}:latest .
+
+            echo "==> Stopping old container (if any)..."
+            docker stop ${CONTAINER} 2>/dev/null || true
+            docker rm   ${CONTAINER} 2>/dev/null || true
+
+            echo "==> Starting new container on port ${APP_PORT}..."
+            docker run -d \
+              --name ${CONTAINER} \
+              --restart unless-stopped \
+              -p ${APP_PORT}:${APP_PORT} \
+              -e MLFLOW_TRACKING_URI=${MLFLOW_URI} \
+              -e PORT=${APP_PORT} \
+              ${IMAGE}:latest
+
+            echo "==> Waiting 15s for container to initialise..."
+            sleep 15
+
+            HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' ${CONTAINER} 2>/dev/null || echo "no-healthcheck")
+            echo "==> Container health: \$HEALTH"
+
+            echo "==> Deployment complete! API is live on port ${APP_PORT}."
+          ENDSSH

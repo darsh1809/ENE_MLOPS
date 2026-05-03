@@ -1,0 +1,2 @@
+# Placeholder — local models will be populated by scripts/export_models.py
+# or by Docker build. Do not commit large .pkl files to git.

@@ -2,7 +2,7 @@ import pandas as pd
 import mlflow
 import os
 
-mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000"))
 
 def explore_and_log_data(filepath='data/online_retail.csv'):
     """

@@ -1,0 +1,40 @@
+# ── Version control & caches ───────────────────────────────────────────────
+.git
+.gitignore
+.github
+**/__pycache__
+**/*.pyc
+**/*.pyo
+*.egg-info
+
+# ── Python virtual envs ────────────────────────────────────────────────────
+.venv
+venv
+env
+
+# ── Local MLflow storage (remote server is used in production) ─────────────
+mlruns
+mlartifacts
+mlflow.db
+
+# ── Large data files ───────────────────────────────────────────────────────
+data/online_retail.csv
+data/processed_online_retail.csv
+data/labeled_customers.csv
+data/customer_segments.csv
+
+# ── IDE / OS artifacts ─────────────────────────────────────────────────────
+.vscode
+.idea
+*.DS_Store
+Thumbs.db
+
+# ── Docs & notebooks (not needed at runtime) ──────────────────────────────
+*.md
+*.pdf
+*.csv   
+!data/*.csv
+*.ipynb
+
+# ── Tests (not needed in image) ───────────────────────────────────────────
+tests

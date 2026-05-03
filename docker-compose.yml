@@ -1,0 +1,43 @@
+# ============================================================
+# docker-compose.yml
+# Local development / integration testing
+# ============================================================
+#
+# Usage:
+#   docker compose up --build        # build + start API
+#   docker compose up -d             # detached mode
+#   docker compose logs -f api       # tail logs
+#   docker compose down              # stop & remove containers
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ── Customer Segmentation API ──────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: segmentation-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5001}:${PORT:-5001}"
+    environment:
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://54.206.46.48:5000}
+      - MLFLOW_EXPERIMENT=${MLFLOW_EXPERIMENT:-customer}
+      - PORT=${PORT:-5001}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - KMEANS_MODEL_PATH=${KMEANS_MODEL_PATH:-models/kmeans_model.pkl}
+      - RF_MODEL_PATH=${RF_MODEL_PATH:-models/rf_model.pkl}
+      - SCALER_MODEL_PATH=${SCALER_MODEL_PATH:-models/scaler.pkl}
+    volumes:
+      # Mount models/ so you can update pkl files without rebuilding
+      - ./models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-5001}/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3

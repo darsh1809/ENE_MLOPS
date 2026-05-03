@@ -1,0 +1,16 @@
+# ── Core web framework ─────────────────────────────────────────────────────
+flask
+gunicorn
+
+# ── ML / Data science ─────────────────────────────────────────────────────
+scikit-learn
+pandas
+numpy
+matplotlib
+seaborn
+
+# ── MLflow experiment tracking ─────────────────────────────────────────────
+mlflow
+
+# ── Model serialisation fallback ──────────────────────────────────────────
+joblib
