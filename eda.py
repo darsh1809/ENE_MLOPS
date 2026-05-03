@@ -283,6 +283,8 @@ if __name__ == "__main__":
             print("❌ Failed to load data.")
             
     except Exception as e:
-        print(f"❌ An error occurred during EDA: {e}")
+        print(f"\u274c An error occurred during EDA: {e}")
         import traceback
         traceback.print_exc()
+        import sys
+        sys.exit(1)   # propagate failure so run_pipeline.py marks step as FAILED

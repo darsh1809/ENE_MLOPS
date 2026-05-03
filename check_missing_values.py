@@ -19,13 +19,21 @@ def explore_and_log_data(filepath='data/online_retail.csv'):
     
     try:
         df = pd.read_csv(filepath, encoding='ISO-8859-1')
-        print(f"✅ Dataset loaded successfully from: {filepath}")
+        print(f"\u2705 Dataset loaded successfully from: {filepath}")
     except FileNotFoundError:
-        print(f"❌ Error: File '{filepath}' not found.")
+        print(f"\u274c Error: File '{filepath}' not found.")
         return None
     except Exception as e:
-        print(f"❌ Error loading dataset: {e}")
+        print(f"\u274c Error loading dataset: {e}")
         return None
+
+    # Normalise column names (same aliases as data_preprocessing.load_and_clean_data)
+    col_aliases = {
+        'InvoiceNo': 'Invoice',
+        'UnitPrice': 'Price',
+        'CustomerID': 'Customer ID',
+    }
+    df.rename(columns={k: v for k, v in col_aliases.items() if k in df.columns}, inplace=True)
     
     # ========================================
     # 2. BASIC DATASET INFO
@@ -143,9 +151,11 @@ def explore_and_log_data(filepath='data/online_retail.csv'):
     return df
 
 if __name__ == "__main__":
+    import sys
     df = explore_and_log_data()
-    
+
     if df is not None:
-        print("\n✅ Data exploration complete. Check MLflow UI → 'customer' experiment → 'Step1_Data_Exploration' run.")
+        print("\n\u2705 Data exploration complete. Check MLflow UI \u2192 'customer' experiment \u2192 'Step1_Data_Exploration' run.")
     else:
-        print("\n❌ Data exploration failed.")
+        print("\n\u274c Data exploration failed.")
+        sys.exit(1)

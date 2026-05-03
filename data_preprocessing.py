@@ -22,9 +22,25 @@ def load_and_clean_data(filepath):
         except Exception as e:
             print(f"Error reading file: {e}")
             return None
-    
+
     if df is None:
         return None
+
+    # ── Normalise column names ────────────────────────────────────────────
+    # Supports both UCI Online Retail I (InvoiceNo / UnitPrice / CustomerID)
+    # and UCI Online Retail II (Invoice / Price / Customer ID) variants.
+    # Every downstream script always sees the canonical set defined here.
+    col_aliases = {
+        # Invoice number
+        'InvoiceNo': 'Invoice',
+        # Unit price
+        'UnitPrice': 'Price',
+        # Customer identifier (space variant → space-less not wanted; keep 'Customer ID')
+        'CustomerID': 'Customer ID',
+    }
+    df.rename(columns={k: v for k, v in col_aliases.items() if k in df.columns}, inplace=True)
+    print(f"Columns after normalisation: {list(df.columns)}")
+    # ─────────────────────────────────────────────────────────────────────
 
     # 1. Drop rows with missing Description
     print(f"Original shape: {df.shape}")
