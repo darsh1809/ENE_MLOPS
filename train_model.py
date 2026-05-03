@@ -313,17 +313,18 @@ if __name__ == "__main__":
                         mlflow.log_artifact(path)
                         print(f"   ✅ Logged: {gf}")
                 
-                # Log the model to MLflow
-                mlflow.sklearn.log_model(kmeans, "kmeans_model")
-                
-                # ── Also save locally so export_models.py / Docker ──
-                # ── never needs to re-fetch from the MLflow server   ──
+                # ── SAVE TO DISK FIRST (guaranteed, even if MLflow upload fails) ──
                 os.makedirs("models", exist_ok=True)
-                import joblib
                 joblib.dump(kmeans, "models/kmeans_model.pkl")
                 joblib.dump(scaler,  "models/scaler.pkl")
                 print("   💾 Saved models/kmeans_model.pkl")
                 print("   💾 Saved models/scaler.pkl")
+
+                # Log the model to MLflow (best-effort — disk copy already safe)
+                try:
+                    mlflow.sklearn.log_model(kmeans, "kmeans_model")
+                except Exception as mlflow_err:
+                    print(f"   ⚠️ MLflow model upload failed (non-fatal): {mlflow_err}")
                 
                 # Save & log cluster summary
                 summary = rfm.groupby('Cluster').agg({
@@ -354,6 +355,8 @@ if __name__ == "__main__":
                 print(f"\n✅ Step 4 complete! All results logged to MLflow.")
     
     except Exception as e:
-        print(f"❌ An error occurred during training: {e}")
+        print(f"\u274c An error occurred during training: {e}")
         import traceback
         traceback.print_exc()
+        import sys as _sys
+        _sys.exit(1)   # propagate failure so run_pipeline.py marks step as FAILED

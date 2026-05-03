@@ -344,14 +344,16 @@ def train_and_evaluate_classifier(df):
             f.write(importances.to_string(index=False))
         mlflow.log_artifact(report_path)
         
-        # Log the model to MLflow
-        mlflow.sklearn.log_model(rf, "random_forest_model")
-        
-        # ── Also save locally so export_models.py / Docker ──
-        # ── never needs to re-fetch from the MLflow server   ──
+        # ── SAVE TO DISK FIRST (guaranteed, even if MLflow upload fails) ──
         os.makedirs("models", exist_ok=True)
         joblib.dump(rf, "models/rf_model.pkl")
         print(f"   💾 Saved models/rf_model.pkl")
+
+        # Log the model to MLflow (best-effort — disk copy already safe)
+        try:
+            mlflow.sklearn.log_model(rf, "random_forest_model")
+        except Exception as mlflow_err:
+            print(f"   ⚠️ MLflow model upload failed (non-fatal): {mlflow_err}")
         
         print(f"\n   Model logged to MLflow!")
         print(f"   All artifacts and metrics logged to MLflow!")
