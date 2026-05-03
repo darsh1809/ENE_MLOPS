@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import os
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, roc_auc_score, classification_report,
                              confusion_matrix, roc_curve, auc)
 from sklearn.preprocessing import LabelEncoder, label_binarize
@@ -343,8 +344,14 @@ def train_and_evaluate_classifier(df):
             f.write(importances.to_string(index=False))
         mlflow.log_artifact(report_path)
         
-        # Log the model
+        # Log the model to MLflow
         mlflow.sklearn.log_model(rf, "random_forest_model")
+        
+        # ── Also save locally so export_models.py / Docker ──
+        # ── never needs to re-fetch from the MLflow server   ──
+        os.makedirs("models", exist_ok=True)
+        joblib.dump(rf, "models/rf_model.pkl")
+        print(f"   💾 Saved models/rf_model.pkl")
         
         print(f"\n   Model logged to MLflow!")
         print(f"   All artifacts and metrics logged to MLflow!")

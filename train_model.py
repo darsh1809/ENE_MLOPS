@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 import mlflow
 import mlflow.sklearn
+import joblib
 import os
 from data_preprocessing import load_and_clean_data
 
@@ -312,8 +313,17 @@ if __name__ == "__main__":
                         mlflow.log_artifact(path)
                         print(f"   ✅ Logged: {gf}")
                 
-                # Log the model
+                # Log the model to MLflow
                 mlflow.sklearn.log_model(kmeans, "kmeans_model")
+                
+                # ── Also save locally so export_models.py / Docker ──
+                # ── never needs to re-fetch from the MLflow server   ──
+                os.makedirs("models", exist_ok=True)
+                import joblib
+                joblib.dump(kmeans, "models/kmeans_model.pkl")
+                joblib.dump(scaler,  "models/scaler.pkl")
+                print("   💾 Saved models/kmeans_model.pkl")
+                print("   💾 Saved models/scaler.pkl")
                 
                 # Save & log cluster summary
                 summary = rfm.groupby('Cluster').agg({

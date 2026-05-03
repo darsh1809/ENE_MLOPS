@@ -127,16 +127,19 @@ jobs:
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
-      # ── Export models from MLflow → models/*.pkl ─────────────────────────
-      - name: Export KMeans + RF models
+      # ── Save scaler (depends on customer_segments.csv from step 4) ────────
+      - name: Save Scaler
+        run: python scripts/save_scaler.py
+
+      # ── Validate all models exist in models/ ──────────────────────────────
+      # models/kmeans_model.pkl → saved by train_model.py
+      # models/rf_model.pkl     → saved by train_classifier.py
+      # models/scaler.pkl       → saved by save_scaler.py above
+      - name: Verify exported models
         env:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python scripts/export_models.py
-
-      # ── Export scaler ────────────────────────────────────────────────────
-      - name: Export Scaler
-        run: python scripts/save_scaler.py
 
       # ── Upload models for deploy job ─────────────────────────────────────
       - name: Upload trained models
