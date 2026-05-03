@@ -6,7 +6,9 @@ on:
   workflow_dispatch: {}
 
 env:
-  MLFLOW_TRACKING_URI: http://54.206.46.48:5000
+  # EC2 MLflow URI — used only in the deploy job (SSH access required).
+  # The pipeline job uses a local file-based backend (no server needed).
+  EC2_MLFLOW_URI: http://54.206.46.48:5000
   MLFLOW_EXPERIMENT: customer
   DOCKER_IMAGE: customer-segmentation-api
   CONTAINER_NAME: segmentation-api
@@ -121,9 +123,11 @@ jobs:
           fi
 
       # ── Run the full 6-step pipeline ────────────────────────────────────
+      # Uses a local file-based MLflow backend (mlruns/) — no remote server
+      # required. Artifacts are uploaded as GitHub Actions artifacts below.
       - name: Run ML Pipeline
         env:
-          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI: mlruns
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
@@ -133,7 +137,7 @@ jobs:
       # models/rf_model.pkl     → saved by train_classifier.py (Step 6)
       - name: Verify exported models
         env:
-          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI: mlruns
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python scripts/export_models.py
 
@@ -144,6 +148,14 @@ jobs:
           name: trained-models
           path: models/
           retention-days: 3
+
+      # ── Upload MLflow tracking data for audit ───────────────────────────
+      - name: Upload MLflow runs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-runs
+          path: mlruns/
+          retention-days: 7
 
       # ── Upload pipeline outputs for audit ────────────────────────────────
       - name: Upload pipeline outputs
@@ -199,7 +211,7 @@ jobs:
         env:
           EC2_HOST:   ${{ secrets.EC2_HOST }}
           EC2_USER:   ${{ secrets.EC2_USER }}
-          MLFLOW_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_URI: ${{ env.EC2_MLFLOW_URI }}
           APP_PORT:   ${{ env.APP_PORT }}
           IMAGE:      ${{ env.DOCKER_IMAGE }}
           CONTAINER:  ${{ env.CONTAINER_NAME }}

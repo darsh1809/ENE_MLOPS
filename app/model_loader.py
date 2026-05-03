@@ -12,7 +12,7 @@ import joblib
 
 logger = logging.getLogger(__name__)
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "mlruns")
 MLFLOW_EXPERIMENT   = os.getenv("MLFLOW_EXPERIMENT", "customer")
 
 # Local fallback paths (relative to project root)

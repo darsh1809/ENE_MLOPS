@@ -13,7 +13,7 @@ import joblib
 import os
 from data_preprocessing import load_and_clean_data
 
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000"))
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "mlruns"))
 
 # Set style
 sns.set(style="whitegrid")

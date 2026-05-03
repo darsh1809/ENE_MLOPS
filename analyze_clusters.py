@@ -9,7 +9,7 @@ from sklearn.metrics import silhouette_score, davies_bouldin_score
 from sklearn.preprocessing import StandardScaler
 import mlflow
 
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000"))
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "mlruns"))
 
 def analyze_and_label_clusters(segments_path='data/customer_segments.csv', output_path='data/labeled_customers.csv'):
     print("Analyzing Clusters...")

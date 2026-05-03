@@ -17,7 +17,7 @@ import mlflow.sklearn
 
 from data_preprocessing import load_and_clean_data
 
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000"))
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "mlruns"))
 
 def prepare_classification_data(labels_path='data/labeled_customers.csv', transactions_path='data/online_retail.csv'):
     print("Preparing data for classification...")

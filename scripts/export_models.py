@@ -27,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TRACKING_URI  = os.getenv("MLFLOW_TRACKING_URI", "http://54.206.46.48:5000")
+TRACKING_URI  = os.getenv("MLFLOW_TRACKING_URI", "mlruns")
 EXPERIMENT    = os.getenv("MLFLOW_EXPERIMENT",   "customer")
 MODELS_DIR    = "models"
 
