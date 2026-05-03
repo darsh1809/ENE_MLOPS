@@ -3,7 +3,7 @@ name: MLOps Pipeline — CI/CD
 on:
   push:
     branches: [main]
-  workflow_dispatch: {}          # allow manual trigger
+  workflow_dispatch: {}
 
 env:
   MLFLOW_TRACKING_URI: http://54.206.46.48:5000
@@ -16,7 +16,7 @@ env:
 jobs:
 # ─────────────────────────────────────────────────────────────────────────────
 
-  # ── Job 1: Unit / smoke tests (fast, no data required) ─────────────────
+  # ── Job 1: API smoke tests (fast, no dataset required) ─────────────────
   test:
     name: "API Smoke Tests"
     runs-on: ubuntu-latest
@@ -37,63 +37,108 @@ jobs:
       - name: Run API smoke tests
         run: pytest tests/ -v --tb=short
 
-  # ── Job 2: Full ML Pipeline ─────────────────────────────────────────────
+  # ── Job 2: Full ML Pipeline ────────────────────────────────────────────
   pipeline:
     name: "Run ML Pipeline"
     runs-on: ubuntu-latest
-    needs: test                  # only run pipeline if tests pass
+    needs: test
 
     steps:
-      # 1. Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up Python
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      # 3. Install dependencies
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt openpyxl
 
-      # 4. Restore dataset
-      #    Option A: base64-encoded archive stored as a GitHub secret
-      #    Option B: download from S3/GCS in a separate step
-      #    Option C: the data/ is committed (not recommended for large files)
-      - name: Restore data directory
+      # ── Dataset acquisition (3 strategies, first match wins) ────────────
+      #
+      # STRATEGY 1 (recommended): Store online_retail.csv in your S3 bucket.
+      #   Add secret:  DATA_URL = https://your-bucket.s3.amazonaws.com/online_retail.csv
+      #
+      # STRATEGY 2 (fallback):  base64-encoded .tar.gz of data/ as a GitHub secret.
+      #   Add secret:  DATA_ARCHIVE_B64 = $(base64 -w0 data.tar.gz)
+      #   Note: GitHub secrets max 64 KB; use this only for small datasets.
+      #
+      # STRATEGY 3 (auto):  Download from UCI ML Repository & convert xlsx→csv.
+      #   No secret needed; requires internet access on the runner.
+      # ────────────────────────────────────────────────────────────────────
+      - name: Acquire dataset
         env:
-          DATA_ARCHIVE_B64: ${{ secrets.DATA_ARCHIVE_B64 }}
+          DATA_URL:          ${{ secrets.DATA_URL }}
+          DATA_ARCHIVE_B64:  ${{ secrets.DATA_ARCHIVE_B64 }}
         run: |
-          if [ -n "$DATA_ARCHIVE_B64" ]; then
+          mkdir -p data
+
+          if [ -n "$DATA_URL" ]; then
+            echo "📥 Strategy 1: Downloading dataset from DATA_URL secret..."
+            curl -fsSL "$DATA_URL" -o data/online_retail.csv
+            echo "✅ Downloaded $(du -h data/online_retail.csv | cut -f1)"
+
+          elif [ -n "$DATA_ARCHIVE_B64" ]; then
+            echo "📦 Strategy 2: Restoring dataset from DATA_ARCHIVE_B64 secret..."
             echo "$DATA_ARCHIVE_B64" | base64 -d > data.tar.gz
             tar -xzf data.tar.gz
-            echo "Dataset restored from secret."
+            echo "✅ Archive extracted."
+
           else
-            echo "No DATA_ARCHIVE_B64 secret found; assuming data/ already present."
+            echo "🌐 Strategy 3: Downloading from UCI ML Repository..."
+            pip install openpyxl --quiet
+            curl -fsSL \
+              "https://archive.ics.uci.edu/ml/machine-learning-databases/00352/Online%20Retail.xlsx" \
+              -o data/online_retail.xlsx
+            echo "Converting xlsx → csv..."
+            python - <<'PYEOF'
+          import pandas as pd
+          df = pd.read_excel("data/online_retail.xlsx", dtype=str)
+          # Normalise column names to match existing scripts
+          rename = {
+              "Invoice":     "Invoice",
+              "StockCode":   "StockCode",
+              "Description": "Description",
+              "Quantity":    "Quantity",
+              "InvoiceDate": "InvoiceDate",
+              "Price":       "Price",
+              "Customer ID": "Customer ID",
+              "Country":     "Country",
+          }
+          df.rename(columns=rename, inplace=True)
+          df.to_csv("data/online_retail.csv", index=False)
+          print(f"Saved {len(df):,} rows to data/online_retail.csv")
+          PYEOF
+            echo "✅ Converted: $(du -h data/online_retail.csv | cut -f1)"
           fi
 
-      # 5. Run full 6-step ML pipeline → logs to remote MLflow
+          # Verify file exists and is non-empty
+          if [ ! -s data/online_retail.csv ]; then
+            echo "❌ data/online_retail.csv is missing or empty."
+            exit 1
+          fi
+
+      # ── Run the full 6-step pipeline ────────────────────────────────────
       - name: Run ML Pipeline
         env:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
-      # 6. Export KMeans + RF models from MLflow → models/*.pkl
+      # ── Export models from MLflow → models/*.pkl ─────────────────────────
       - name: Export KMeans + RF models
         env:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python scripts/export_models.py
 
-      # 7. Export StandardScaler → models/scaler.pkl
+      # ── Export scaler ────────────────────────────────────────────────────
       - name: Export Scaler
         run: python scripts/save_scaler.py
 
-      # 8. Upload models/ for use in the deploy job
+      # ── Upload models for deploy job ─────────────────────────────────────
       - name: Upload trained models
         uses: actions/upload-artifact@v4
         with:
@@ -101,8 +146,8 @@ jobs:
           path: models/
           retention-days: 3
 
-      # 9. Upload data artifacts (plots, reports) for audit / debug
-      - name: Upload pipeline data outputs
+      # ── Upload pipeline outputs for audit ────────────────────────────────
+      - name: Upload pipeline outputs
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-outputs
@@ -112,37 +157,32 @@ jobs:
             data/*.txt
           retention-days: 7
 
-  # ── Job 3: Build & Deploy to EC2 ───────────────────────────────────────
+  # ── Job 3: Build & Deploy to EC2 ──────────────────────────────────────
   deploy:
     name: "Build & Deploy to EC2"
     runs-on: ubuntu-latest
-    needs: pipeline              # only deploy if pipeline succeeds
+    needs: pipeline
     if: github.ref == 'refs/heads/main'
 
     steps:
-      # 1. Checkout (fresh workspace on deploy runner)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Download exported models from pipeline job
       - name: Download trained models
         uses: actions/download-artifact@v4
         with:
           name: trained-models
           path: models/
 
-      # 3. Configure SSH agent with EC2 private key
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # 4. Trust EC2 host (prevent interactive StrictHostKeyChecking prompt)
       - name: Add EC2 to known_hosts
         run: |
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # 5. Sync source code + models to EC2 (exclude large / dev files)
       - name: Sync code to EC2
         run: |
           rsync -avz \
@@ -152,14 +192,10 @@ jobs:
             --exclude 'mlruns' \
             --exclude 'mlartifacts' \
             --exclude 'mlflow.db' \
-            --exclude 'data/online_retail.csv' \
-            --exclude 'data/processed_online_retail.csv' \
-            --exclude 'data/labeled_customers.csv' \
-            --exclude 'data/customer_segments.csv' \
+            --exclude 'data/' \
             -e "ssh" \
             ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/app/
 
-      # 6. Build Docker image on EC2 and restart container
       - name: Build Docker image & restart container on EC2
         env:
           EC2_HOST:   ${{ secrets.EC2_HOST }}
@@ -189,11 +225,8 @@ jobs:
               -e PORT=${APP_PORT} \
               ${IMAGE}:latest
 
-            echo "==> Waiting 15s for container to initialise..."
+            echo "==> Waiting 15s for container to start..."
             sleep 15
-
-            HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' ${CONTAINER} 2>/dev/null || echo "no-healthcheck")
-            echo "==> Container health: \$HEALTH"
-
-            echo "==> Deployment complete! API is live on port ${APP_PORT}."
+            docker inspect --format='{{.State.Health.Status}}' ${CONTAINER} || true
+            echo "==> Deployment complete!"
           ENDSSH

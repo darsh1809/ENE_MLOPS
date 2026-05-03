@@ -90,6 +90,9 @@ def main():
         print(f"\n  ⚠️ Pipeline did not complete. Fix the failed step and re-run.")
     
     print(f"{'='*60}")
+    
+    if not all_passed:
+        sys.exit(1)   # signal failure to CI (GitHub Actions, etc.)
 
 if __name__ == "__main__":
     main()
