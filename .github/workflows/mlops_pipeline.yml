@@ -127,14 +127,10 @@ jobs:
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
-      # ── Save scaler (depends on customer_segments.csv from step 4) ────────
-      - name: Save Scaler
-        run: python scripts/save_scaler.py
-
       # ── Validate all models exist in models/ ──────────────────────────────
-      # models/kmeans_model.pkl → saved by train_model.py
-      # models/rf_model.pkl     → saved by train_classifier.py
-      # models/scaler.pkl       → saved by save_scaler.py above
+      # models/kmeans_model.pkl → saved by train_model.py      (Step 4)
+      # models/scaler.pkl       → saved by train_model.py      (Step 4)
+      # models/rf_model.pkl     → saved by train_classifier.py (Step 6)
       - name: Verify exported models
         env:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
