@@ -123,11 +123,13 @@ jobs:
           fi
 
       # ── Run the full 6-step pipeline ────────────────────────────────────
-      # Logs all experiments to the remote EC2 MLflow tracking server.
+      # Metrics/params → EC2 MLflow server; artifacts → local runner path
+      # (avoids PermissionError when server's artifact root is a local path).
       - name: Run ML Pipeline
         env:
-          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
-          MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
+          MLFLOW_TRACKING_URI:  ${{ env.EC2_MLFLOW_URI }}
+          MLFLOW_EXPERIMENT:    ${{ env.MLFLOW_EXPERIMENT }}
+          MLFLOW_ARTIFACT_URI:  ${{ github.workspace }}/mlruns
         run: python run_pipeline.py
 
       # ── Validate all models exist in models/ ──────────────────────────────
@@ -138,6 +140,7 @@ jobs:
         env:
           MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
+          MLFLOW_ARTIFACT_URI: ${{ github.workspace }}/mlruns
         run: python scripts/export_models.py
 
       # ── Upload models for deploy job ─────────────────────────────────────
