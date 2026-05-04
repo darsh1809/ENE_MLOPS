@@ -122,14 +122,49 @@ jobs:
             exit 1
           fi
 
+      # ── Fix MLflow experiment artifact location ──────────────────────────
+      # The EC2 server was started without --serve-artifacts, so it returns
+      # an absolute path (/mlruns) as artifact URI. The runner can't write
+      # there. This step archives the bad experiment and recreates it with
+      # a file:// URI that the runner CAN write to.
+      - name: Setup MLflow experiment artifact location
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
+        run: |
+          python - << 'PYEOF'
+          import mlflow, os, sys
+
+          client  = mlflow.tracking.MlflowClient()
+          ws      = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
+          good_loc = f"file://{ws}/mlartifacts"
+          safe_prefixes = ('s3://', 'gs://', 'az://', 'http://', 'https://',
+                           'file://', 'mlflow-artifacts://')
+
+          exp = client.get_experiment_by_name("customer")
+          if exp is not None:
+              loc = exp.artifact_location or ""
+              if not any(loc.startswith(p) for p in safe_prefixes):
+                  print(f"[setup] Archiving experiment with bad artifact_location: {loc}")
+                  client.delete_experiment(exp.experiment_id)
+                  exp = None   # force recreation below
+
+          if exp is None:
+              try:
+                  eid = client.create_experiment("customer", artifact_location=good_loc)
+                  print(f"[setup] Created experiment 'customer' (id={eid}), artifact_location={good_loc}")
+              except Exception as e:
+                  print(f"[setup] WARNING: {e}", file=sys.stderr)
+          else:
+              print(f"[setup] Experiment OK. artifact_location={exp.artifact_location}")
+          PYEOF
+
       # ── Run the full 6-step pipeline ────────────────────────────────────
-      # Metrics/params → EC2 MLflow server; artifacts → local runner path
-      # (avoids PermissionError when server's artifact root is a local path).
+      # Metrics/params/tags  → EC2 MLflow tracking server  (visible in UI)
+      # Artifacts (PNG, CSV) → file://$WORKSPACE/mlartifacts (runner-local)
       - name: Run ML Pipeline
         env:
-          MLFLOW_TRACKING_URI:  ${{ env.EC2_MLFLOW_URI }}
-          MLFLOW_EXPERIMENT:    ${{ env.MLFLOW_EXPERIMENT }}
-          MLFLOW_ARTIFACT_URI:  ${{ github.workspace }}/mlruns
+          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
+          MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
       # ── Validate all models exist in models/ ──────────────────────────────
@@ -140,7 +175,6 @@ jobs:
         env:
           MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
-          MLFLOW_ARTIFACT_URI: ${{ github.workspace }}/mlruns
         run: python scripts/export_models.py
 
       # ── Upload models for deploy job ─────────────────────────────────────
@@ -151,13 +185,18 @@ jobs:
           path: models/
           retention-days: 3
 
-      # ── Upload MLflow tracking data for audit ───────────────────────────
-      - name: Upload MLflow runs
+      # ── Upload MLflow artifacts for audit ───────────────────────────────
+      # mlartifacts/ = PNGs, CSVs, model files logged via log_artifact()
+      # mlruns/      = local metadata if any step fell back to file backend
+      - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mlflow-runs
-          path: mlruns/
+          name: mlflow-artifacts
+          path: |
+            mlartifacts/
+            mlruns/
           retention-days: 7
+        if: always()   # upload even if pipeline partially failed
 
       # ── Upload pipeline outputs for audit ────────────────────────────────
       - name: Upload pipeline outputs
