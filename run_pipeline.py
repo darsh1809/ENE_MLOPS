@@ -77,7 +77,8 @@ def main():
     
     if all_passed:
         print(f"\n  🎉 ALL 6 STEPS COMPLETED SUCCESSFULLY!")
-        print(f"  📊 Open MLflow UI: http://localhost:5000")
+        mlflow_uri = os.getenv("MLFLOW_TRACKING_URI", "mlruns")
+        print(f"  📊 Open MLflow UI: {mlflow_uri}")
         print(f"  🔍 Experiment: 'customer' (6 runs)")
         print(f"\n  Runs created:")
         print(f"    1. Step1_Data_Exploration")
