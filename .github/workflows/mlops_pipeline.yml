@@ -123,11 +123,10 @@ jobs:
           fi
 
       # ── Run the full 6-step pipeline ────────────────────────────────────
-      # Uses a local file-based MLflow backend (mlruns/) — no remote server
-      # required. Artifacts are uploaded as GitHub Actions artifacts below.
+      # Logs all experiments to the remote EC2 MLflow tracking server.
       - name: Run ML Pipeline
         env:
-          MLFLOW_TRACKING_URI: mlruns
+          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python run_pipeline.py
 
@@ -137,7 +136,7 @@ jobs:
       # models/rf_model.pkl     → saved by train_classifier.py (Step 6)
       - name: Verify exported models
         env:
-          MLFLOW_TRACKING_URI: mlruns
+          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
           MLFLOW_EXPERIMENT:   ${{ env.MLFLOW_EXPERIMENT }}
         run: python scripts/export_models.py
 
