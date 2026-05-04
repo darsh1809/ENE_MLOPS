@@ -175,6 +175,36 @@ jobs:
           PYEOF
           echo "✅ Installed MLflow CI patch in $SITE/sitecustomize.py"
 
+      # ── Restore deleted MLflow experiment (if any) ──────────────────────
+      # If the 'customer' experiment was previously soft-deleted on the EC2
+      # MLflow server, mlflow.set_experiment() will raise:
+      #   MlflowException: Cannot set a deleted experiment as the active experiment.
+      # This step restores it (or confirms it is already active) before the
+      # pipeline runs, so every script can safely call set_experiment().
+      - name: Restore deleted MLflow experiment (if any)
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
+        run: |
+          python - <<'PYEOF'
+          import os, mlflow
+          from mlflow.tracking import MlflowClient
+
+          tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "mlruns")
+          mlflow.set_tracking_uri(tracking_uri)
+          client = MlflowClient()
+          exp_name = "customer"
+
+          exp = client.get_experiment_by_name(exp_name)
+          if exp is None:
+              print(f"ℹ️  Experiment '{exp_name}' not found — will be created fresh.")
+          elif exp.lifecycle_stage == "deleted":
+              print(f"⚠️  Experiment '{exp_name}' is deleted (id={exp.experiment_id}). Restoring...")
+              client.restore_experiment(exp.experiment_id)
+              print(f"✅ Experiment '{exp_name}' restored successfully.")
+          else:
+              print(f"✅ Experiment '{exp_name}' is already active (stage={exp.lifecycle_stage}).")
+          PYEOF
+
       # ── Run the full 6-step pipeline ────────────────────────────────────
       # Metrics/params/tags  → EC2 MLflow tracking server  (visible in UI)
       # Artifacts            → skipped gracefully if /mlruns is unwritable
