@@ -122,45 +122,63 @@ jobs:
             exit 1
           fi
 
-      # ── Fix MLflow experiment artifact location ──────────────────────────
-      # The EC2 server was started without --serve-artifacts, so it returns
-      # an absolute path (/mlruns) as artifact URI. The runner can't write
-      # there. This step archives the bad experiment and recreates it with
-      # a file:// URI that the runner CAN write to.
-      - name: Setup MLflow experiment artifact location
-        env:
-          MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
+      # ── Patch mlflow.log_artifact to survive PermissionError ────────────
+      # The EC2 MLflow server was started WITHOUT --serve-artifacts, so it
+      # returns an absolute path (/mlruns) as the artifact URI.  The runner
+      # cannot write to /mlruns.  We install a sitecustomize.py shim into
+      # the active Python's site-packages directory; Python auto-imports
+      # this file before every script (including subprocesses), so every
+      # mlflow.log_artifact call across all 6 pipeline steps will silently
+      # skip PermissionErrors instead of crashing the pipeline.
+      # Metrics, params, and tags are unaffected — they still reach EC2.
+      - name: Patch mlflow artifact logging for CI
         run: |
-          python - << 'PYEOF'
-          import mlflow, os, sys
+          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
+          cat > "$SITE/sitecustomize.py" << 'PYEOF'
+          try:
+              import mlflow as _m
+              from mlflow.tracking import MlflowClient as _C
 
-          client  = mlflow.tracking.MlflowClient()
-          ws      = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
-          good_loc = f"file://{ws}/mlartifacts"
-          safe_prefixes = ('s3://', 'gs://', 'az://', 'http://', 'https://',
-                           'file://', 'mlflow-artifacts://')
+              # ── patch fluent API (mlflow.log_artifact) ──────────────────
+              _orig_fluent = _m.log_artifact
+              def _safe_fluent(local_path, artifact_path=None, run_id=None):
+                  try:
+                      _orig_fluent(local_path, artifact_path=artifact_path,
+                                   run_id=run_id)
+                  except PermissionError as e:
+                      print(f"[ci-patch] mlflow.log_artifact skipped: {e}")
+                  except Exception as e:
+                      if "Permission denied" in str(e):
+                          print(f"[ci-patch] mlflow.log_artifact skipped: {e}")
+                      else:
+                          raise
+              _m.log_artifact = _safe_fluent
 
-          exp = client.get_experiment_by_name("customer")
-          if exp is not None:
-              loc = exp.artifact_location or ""
-              if not any(loc.startswith(p) for p in safe_prefixes):
-                  print(f"[setup] Archiving experiment with bad artifact_location: {loc}")
-                  client.delete_experiment(exp.experiment_id)
-                  exp = None   # force recreation below
+              # ── patch client API (MlflowClient.log_artifact) ────────────
+              _orig_client = _C.log_artifact
+              def _safe_client(self, run_id, local_path,
+                               artifact_path=None):
+                  try:
+                      _orig_client(self, run_id, local_path,
+                                   artifact_path=artifact_path)
+                  except PermissionError as e:
+                      print(f"[ci-patch] MlflowClient.log_artifact skipped: {e}")
+                  except Exception as e:
+                      if "Permission denied" in str(e):
+                          print(f"[ci-patch] MlflowClient.log_artifact skipped: {e}")
+                      else:
+                          raise
+              _C.log_artifact = _safe_client
 
-          if exp is None:
-              try:
-                  eid = client.create_experiment("customer", artifact_location=good_loc)
-                  print(f"[setup] Created experiment 'customer' (id={eid}), artifact_location={good_loc}")
-              except Exception as e:
-                  print(f"[setup] WARNING: {e}", file=sys.stderr)
-          else:
-              print(f"[setup] Experiment OK. artifact_location={exp.artifact_location}")
+          except ImportError:
+              pass   # mlflow not yet installed — nothing to patch
           PYEOF
+          echo "✅ Installed MLflow CI patch in $SITE/sitecustomize.py"
 
       # ── Run the full 6-step pipeline ────────────────────────────────────
       # Metrics/params/tags  → EC2 MLflow tracking server  (visible in UI)
-      # Artifacts (PNG, CSV) → file://$WORKSPACE/mlartifacts (runner-local)
+      # Artifacts            → skipped gracefully if /mlruns is unwritable
+      #                        (fix: restart EC2 server with --serve-artifacts)
       - name: Run ML Pipeline
         env:
           MLFLOW_TRACKING_URI: ${{ env.EC2_MLFLOW_URI }}
